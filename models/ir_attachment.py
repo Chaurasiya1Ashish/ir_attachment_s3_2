@@ -60,11 +60,15 @@ class IrAttachment(models.Model):
 
         return super(IrAttachment, self - s3_records)._inverse_datas()
 
+    def get_s3_bucket_temp(self):
+        bucket = self.env["res.config.settings"].get_s3_bucket()
+        return bucket
+
     def _file_read(self, fname):
         if not fname.startswith(PREFIX):
             return super(IrAttachment, self)._file_read(fname)
 
-        bucket = self.env["res.config.settings"].get_s3_bucket()
+        bucket = self.get_s3_bucket_temp()
 
         file_id = fname[len(PREFIX) :]
         _logger.debug("reading file with id {}".format(file_id))
