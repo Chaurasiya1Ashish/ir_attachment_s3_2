@@ -7,7 +7,7 @@
 # License MIT (https://opensource.org/licenses/MIT).
 
 import logging
-
+import pathlib
 from odoo import _, models
 from odoo.exceptions import MissingError
 from odoo.tools.safe_eval import safe_eval
@@ -141,8 +141,8 @@ class IrAttachment(models.Model):
             return super(IrAttachment, self)._file_write_with_bucket(
                 bucket, bin_data, filename, mimetype, checksum
             )
-
-        file_id = "odoo-test/{}".format(checksum)
+        filename = checksum + pathlib.Path(filename).suffix
+        file_id = "odoo-test/{}".format(filename)
 
         bucket.put_object(
             Key=file_id,
