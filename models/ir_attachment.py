@@ -64,19 +64,6 @@ class IrAttachment(models.Model):
         bucket = self.env["res.config.settings"].get_s3_bucket()
         return bucket
 
-    def _file_read(self, fname):
-        if not fname.startswith(PREFIX):
-            return super(IrAttachment, self)._file_read(fname)
-
-        bucket = self.get_s3_bucket_temp()
-
-        file_id = fname[len(PREFIX) :]
-        _logger.debug("reading file with id {}".format(file_id))
-
-        obj = bucket.Object(file_id)
-        data = obj.get()
-        return data["Body"].read()
-
     def _file_delete(self, fname):
         if not fname.startswith(PREFIX):
             return super(IrAttachment, self)._file_delete(fname)
