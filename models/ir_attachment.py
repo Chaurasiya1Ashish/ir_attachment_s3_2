@@ -47,24 +47,14 @@ class IrAttachment(models.Model):
 
         return super(IrAttachment, self).create(vals_list)
 
-    def _get_datas_related_values_with_bucket(
-            self, bucket, bin_data, mimetype, checksum=None
-    ):
+    def _get_datas_related_values_with_bucket( self, bucket, bin_data, mimetype, checksum=None):
         bin_data = bin_data if bin_data else b""
         if not checksum:
             checksum = self._compute_checksum(bin_data)
-        fname, url = self._file_write_with_bucket(
-            bucket, bin_data, mimetype, checksum
-        )
-        return {
-            "file_size": len(bin_data),
-            "checksum": checksum,
-            "index_content": self._index(bin_data, mimetype),
-            "store_fname": fname,
-            "db_datas": False,
-            "type": "url",
-            "url": url,
-        }
+
+        _logger.info("evt=IR_ATTACH method=_get_datas_related_values_with_bucket mimetype={}".format(mimetype))
+        url = self._file_write_with_bucket(bucket, bin_data, mimetype, checksum)
+        return {"url": url}
 
 
     def get_s3_bucket(self):
@@ -73,6 +63,8 @@ class IrAttachment(models.Model):
 
     def _file_write_with_bucket(self, bucket, bin_data, mimetype, checksum):
         # make sure, that given bucket is s3 bucket
+        _logger.info("evt=IR_ATTACH mimetype={}".format(mimetype))
+
         if not is_s3_bucket(bucket):
             return super(IrAttachment, self)._file_write_with_bucket(
                 bucket, bin_data, mimetype, checksum
@@ -88,6 +80,6 @@ class IrAttachment(models.Model):
             ContentDisposition='attachment; filename="%s"' % filename,
         )
 
-        _logger.info("evt=IR_ATTACH msg=uploaded file with id {}".format(file_id))
+        _logger.info("evt=IR_ATTACH upload_path={}".format(file_id))
         obj_url = self.env["res.config.settings"].get_s3_obj_url(bucket, file_id)
-        return file_id, obj_url
+        return obj_url
