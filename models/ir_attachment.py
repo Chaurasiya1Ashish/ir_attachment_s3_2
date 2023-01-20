@@ -17,9 +17,10 @@ class IrAttachment(models.Model):
     _inherit = "ir.attachment"
 
     def write(self, vals):
-        if self.res_model and self.res_model in ['mail.compose.message', 'sale.order'] and self.type == 'url':
+        if self.res_model and self.res_model in ['mail.compose.message', 'sale.order'] and self.type == 'url' and vals.get('datas'):
             vals = self._check_contents(vals)
             datas = vals.pop('datas', None)
+            _logger.info("evt=IR_ATTACH method=write vals={}".format(vals))
             bucket = self.get_s3_bucket()
             related_values = self._get_datas_related_values_with_bucket(bucket, base64.b64decode(datas or b''), vals.get('mimetype'))
             vals['url'] = related_values['url']
