@@ -1,23 +1,12 @@
-# Copyright 2016-2018 Ildar Nasyrov <https://it-projects.info/team/iledarn>
-# Copyright 2016-2018,2021 Ivan Yelizariev <https://twitter.com/yelizariev>
-# Copyright 2019 Alexandr Kolushov <https://it-projects.info/team/KolushovAlexandr>
-# Copyright 2019 Rafis Bikbov <https://it-projects.info/team/RafiZz>
-# Copyright 2019 Dinar Gabbasov <https://it-projects.info/team/GabbasovDinar>
-# Copyright 2019-2020 Eugene Molotov <https://it-projects.info/team/em230418>
-# License MIT (https://opensource.org/licenses/MIT).
-
-import logging
 import pathlib
-from odoo import _, models
-from odoo.exceptions import MissingError
-from odoo.tools.safe_eval import safe_eval
+import base64
+import logging
 
-from .res_config_settings import NotAllCredentialsGiven
+import requests
+
+from odoo import api, models
 
 _logger = logging.getLogger(__name__)
-
-PREFIX = "s3://"
-
 
 def is_s3_bucket(bucket):
     meta = getattr(bucket, "meta", None)
@@ -28,99 +17,76 @@ class IrAttachment(models.Model):
 
     _inherit = "ir.attachment"
 
-    def _inverse_datas(self):
-        condition = self.env["res.config.settings"]._get_s3_settings(
-            "s3.condition", "S3_CONDITION"
+    @api.depends("store_fname", "db_datas")
+    def _compute_raw(self):
+        url_records = self.filtered(lambda r: r.type == "url" and r.url)
+        for attach in url_records:
+            r = requests.get(attach.url, timeout=5)
+            attach.raw = r.content
+
+        super(IrAttachment, self - url_records)._compute_raw()
+
+    def _filter_protected_attachments(self):
+        return self.filtered(
+            lambda r: r.res_model not in ["ir.ui.view", "ir.ui.menu"]
+                      and not r.name.startswith("/web/content/")
+                      and not r.name.startswith("/web/static/")
         )
-        #condition = "[('res_model', '=', 'sale.order')]"
-        if condition and not self.env.context.get("force_s3"):
-            condition = safe_eval(condition, mode="eval")
-            s3_records = self.sudo().search([("id", "in", self.ids)] + condition)
-        else:
-            # if there is no condition or force_s3 in context
-            # then store all attachments on s3
-            s3_records = self
 
-        if s3_records:
+    @api.model_create_multi
+    def create(self, vals_list):
+        for values in vals_list:
+            if values.get('type') != 'url':
+                # convert Binary to Url
+                values = self._check_contents(values)
+                raw, datas = values.pop('raw', None), values.pop('datas', None)
+                if raw or datas:
+                    if isinstance(raw, str):
+                        raw = raw.encode()
 
-            try:
-                bucket = self.env["res.config.settings"].get_s3_bucket()
-            except NotAllCredentialsGiven:
-                _logger.info("something wrong on aws side, keep attachments as usual")
-                s3_records = self.env[self._name]
-            except Exception:
-                _logger.exception(
-                    "Something bad happened with S3. Keeping attachments as usual"
-                )
-                s3_records = self.env[self._name]
-            else:
-                s3_records = s3_records._filter_protected_attachments()
-                s3_records = s3_records.filtered(lambda r: r.type != "url")
-                s3_records._write_records_with_bucket(bucket)
+                bucket = self.get_s3_bucket_temp()
+                filename = values.get("name")
+                mimetype = self._compute_mimetype(values)
+                related_values = self._get_datas_related_values_with_bucket(bucket, raw or base64.b64decode(datas or b''), filename, mimetype)
+                values['type'] = 'url'
+                values['datas'] = False
+                values['url'] = related_values['url']
 
-        return super(IrAttachment, self - s3_records)._inverse_datas()
+        return super(IrAttachment, self).create(vals_list)
+
+    def _get_datas_related_values_with_bucket(
+            self, bucket, bin_data, filename, mimetype, checksum=None
+    ):
+        bin_data = bin_data if bin_data else b""
+        if not checksum:
+            checksum = self._compute_checksum(bin_data)
+        fname, url = self._file_write_with_bucket(
+            bucket, bin_data, filename, mimetype, checksum
+        )
+        return {
+            "file_size": len(bin_data),
+            "checksum": checksum,
+            "index_content": self._index(bin_data, mimetype),
+            "store_fname": fname,
+            "db_datas": False,
+            "type": "url",
+            "url": url,
+        }
+
+    def _set_where_to_store(self, vals_list):
+        pass
+
+    def _write_records_with_bucket(self, bucket):
+        for attach in self:
+            vals = self._get_datas_related_values_with_bucket(
+                bucket, attach.datas, attach.name, attach.mimetype
+            )
+            super(IrAttachment, attach.sudo()).write(vals)
+
 
     def get_s3_bucket_temp(self):
         bucket = self.env["res.config.settings"].get_s3_bucket()
         return bucket
-
-    def _file_delete(self, fname):
-        if not fname.startswith(PREFIX):
-            return super(IrAttachment, self)._file_delete(fname)
-
-        bucket = self.env["res.config.settings"].get_s3_bucket()
-
-        file_id = fname[len(PREFIX) :]
-        _logger.debug("deleting file with id {}".format(file_id))
-
-        obj = bucket.Object(file_id)
-        obj.delete()
-
-    def force_storage_s3(self):
-        try:
-            bucket = self.env["res.config.settings"].get_s3_bucket()
-        except NotAllCredentialsGiven:
-            if self.env.context.get("module") == "general_settings":
-                raise MissingError(
-                    _(
-                        "Some of the S3 connection credentials are missing.\n Don't forget to click the ``[Save]`` button after any changes you've made"
-                    )
-                )
-            else:
-                raise
-
-        s3_condition = self.env["ir.config_parameter"].sudo().get_param("s3.condition")
-        condition = s3_condition and safe_eval(s3_condition, mode="eval") or []
-
-        return self._force_storage_with_bucket(
-            bucket,
-            [
-                ("type", "!=", "url"),
-                ("id", "!=", 0),
-                ("store_fname", "not ilike", PREFIX),
-                ("store_fname", "!=", False),
-                ("res_model", "not in", ["ir.ui.view", "ir.ui.menu"]),
-            ]
-            + condition,
-        )
-
-    def _set_where_to_store(self, vals_list):
-        bucket = None
-        try:
-            bucket = self.env["res.config.settings"].get_s3_bucket()
-        except NotAllCredentialsGiven:
-            _logger.info("Could not get S3 bucket. Not all credentials given")
-        except Exception:
-            _logger.exception("Could not get S3 bucket")
-
-        if not bucket:
-            return super(IrAttachment, self)._set_where_to_store(vals_list)
-
-        # TODO: тут игнорируется s3 condition и соотвествующий bucket пишется везде
-        for values in vals_list:
-            values["_bucket"] = bucket
-
-        return super(IrAttachment, self)._set_where_to_store(vals_list)
 
     def _file_write_with_bucket(self, bucket, bin_data, filename, mimetype, checksum):
         # make sure, that given bucket is s3 bucket
@@ -141,4 +107,4 @@ class IrAttachment(models.Model):
 
         _logger.debug("uploaded file with id {}".format(file_id))
         obj_url = self.env["res.config.settings"].get_s3_obj_url(bucket, file_id)
-        return PREFIX + file_id, obj_url
+        return file_id, obj_url
