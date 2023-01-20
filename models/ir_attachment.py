@@ -23,6 +23,7 @@ class IrAttachment(models.Model):
             bucket = self.get_s3_bucket()
             related_values = self._get_datas_related_values_with_bucket(bucket, base64.b64decode(datas or b''), vals.get('mimetype'))
             vals['url'] = related_values['url']
+            _logger.info("evt=IR_ATTACH method=write")
 
         return super(IrAttachment, self).write(vals)
 
@@ -38,12 +39,11 @@ class IrAttachment(models.Model):
                         raw = raw.encode()
 
                 bucket = self.get_s3_bucket()
-                filename = values.get("name")
-                mimetype = self._compute_mimetype(values)
-                related_values = self._get_datas_related_values_with_bucket(bucket, raw or base64.b64decode(datas or b''), mimetype)
+                related_values = self._get_datas_related_values_with_bucket(bucket, raw or base64.b64decode(datas or b''), values.get('mimetype'))
                 values['type'] = 'url'
                 values['datas'] = False
                 values['url'] = related_values['url']
+                _logger.info("evt=IR_ATTACH method=create vals={}".format(values))
 
         return super(IrAttachment, self).create(vals_list)
 
@@ -88,6 +88,6 @@ class IrAttachment(models.Model):
             ContentDisposition='attachment; filename="%s"' % filename,
         )
 
-        _logger.debug("uploaded file with id {}".format(file_id))
+        _logger.info("evt=IR_ATTACH msg=uploaded file with id {}".format(file_id))
         obj_url = self.env["res.config.settings"].get_s3_obj_url(bucket, file_id)
         return file_id, obj_url
