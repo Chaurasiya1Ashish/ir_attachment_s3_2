@@ -8,7 +8,7 @@
     "author": "IT-Projects LLC, Ildar Nasyrov",
     "website": "https://twitter.com/OdooFree",
     "license": "Other OSI approved licence",  # MIT
-    "depends": ["base_setup", "ir_attachment_url"],
+    "depends": ["base_setup"],
     "external_dependencies": {"python": ["boto3"], "bin": []},
     "data": ["data/ir_attachment_s3_data.xml", "views/res_config_settings_views.xml"],
     "qweb": [],

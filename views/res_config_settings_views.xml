@@ -89,15 +89,6 @@
                                         <field name="s3_condition" class="oe_inline" />
                                     </div>
                                 </div>
-                                <div class="content-group">
-                                    <div class="mt16">
-                                        <button
-                                            name="s3_upload_existing"
-                                            type="object"
-                                            string="Upload existing attachments"
-                                        />
-                                    </div>
-                                </div>
                             </div>
                         </div>
                     </div>

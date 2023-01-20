@@ -94,5 +94,3 @@ class S3Settings(models.TransientModel):
         ICPSudo.set_param("s3.obj_url", self.s3_obj_url or "")
         ICPSudo.set_param("s3.condition", self.s3_condition or "")
 
-    def s3_upload_existing(self):
-        self.env["ir.attachment"].force_storage_s3()
