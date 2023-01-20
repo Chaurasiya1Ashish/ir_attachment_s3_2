@@ -2,8 +2,6 @@ import pathlib
 import base64
 import logging
 
-import requests
-
 from odoo import api, models
 
 _logger = logging.getLogger(__name__)
@@ -17,22 +15,6 @@ class IrAttachment(models.Model):
 
     _inherit = "ir.attachment"
 
-    @api.depends("store_fname", "db_datas")
-    def _compute_raw(self):
-        url_records = self.filtered(lambda r: r.type == "url" and r.url)
-        for attach in url_records:
-            r = requests.get(attach.url, timeout=5)
-            attach.raw = r.content
-
-        super(IrAttachment, self - url_records)._compute_raw()
-
-    def _filter_protected_attachments(self):
-        return self.filtered(
-            lambda r: r.res_model not in ["ir.ui.view", "ir.ui.menu"]
-                      and not r.name.startswith("/web/content/")
-                      and not r.name.startswith("/web/static/")
-        )
-
     @api.model_create_multi
     def create(self, vals_list):
         for values in vals_list:
@@ -44,7 +26,7 @@ class IrAttachment(models.Model):
                     if isinstance(raw, str):
                         raw = raw.encode()
 
-                bucket = self.get_s3_bucket_temp()
+                bucket = self.get_s3_bucket()
                 filename = values.get("name")
                 mimetype = self._compute_mimetype(values)
                 related_values = self._get_datas_related_values_with_bucket(bucket, raw or base64.b64decode(datas or b''), filename, mimetype)
@@ -73,18 +55,8 @@ class IrAttachment(models.Model):
             "url": url,
         }
 
-    def _set_where_to_store(self, vals_list):
-        pass
 
-    def _write_records_with_bucket(self, bucket):
-        for attach in self:
-            vals = self._get_datas_related_values_with_bucket(
-                bucket, attach.datas, attach.name, attach.mimetype
-            )
-            super(IrAttachment, attach.sudo()).write(vals)
-
-
-    def get_s3_bucket_temp(self):
+    def get_s3_bucket(self):
         bucket = self.env["res.config.settings"].get_s3_bucket()
         return bucket
 
