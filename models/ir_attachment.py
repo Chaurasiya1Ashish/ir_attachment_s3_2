@@ -2,6 +2,7 @@ import pathlib
 import base64
 import logging
 import mimetypes
+import requests
 
 from odoo import api, models
 
@@ -15,6 +16,16 @@ def is_s3_bucket(bucket):
 class IrAttachment(models.Model):
 
     _inherit = "ir.attachment"
+
+    @api.depends("store_fname", "db_datas")
+    def _compute_raw(self):
+        url_records = self.filtered(lambda r: r.type == "url" and r.url)
+        for attach in url_records:
+            r = requests.get(attach.url, timeout=5)
+            attach.raw = r.content
+
+        super(IrAttachment, self - url_records)._compute_raw()
+
 
     def write(self, vals):
         if self.res_model and self.res_model in ['mail.compose.message', 'sale.order'] and self.type == 'url' and vals.get('datas'):
