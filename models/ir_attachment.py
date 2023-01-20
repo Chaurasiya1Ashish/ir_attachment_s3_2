@@ -23,7 +23,7 @@ class IrAttachment(models.Model):
             bucket = self.get_s3_bucket()
             related_values = self._get_datas_related_values_with_bucket(bucket, base64.b64decode(datas or b''), vals.get('mimetype'))
             vals['url'] = related_values['url']
-            _logger.info("evt=IR_ATTACH method=write")
+            _logger.info("evt=IR_ATTACH method=write mimetype={}".format(vals.get('mimetype')))
 
         return super(IrAttachment, self).write(vals)
 
