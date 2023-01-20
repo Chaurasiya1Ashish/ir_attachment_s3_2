@@ -1,6 +1,7 @@
 import pathlib
 import base64
 import logging
+import mimetypes
 
 from odoo import api, models
 
@@ -15,10 +16,20 @@ class IrAttachment(models.Model):
 
     _inherit = "ir.attachment"
 
+    def write(self, vals):
+        if self.res_model and self.res_model in ['mail.compose.message', 'sale.order'] and self.type == 'url':
+            vals = self._check_contents(vals)
+            datas = vals.pop('datas', None)
+            bucket = self.get_s3_bucket()
+            related_values = self._get_datas_related_values_with_bucket(bucket, base64.b64decode(datas or b''), vals.get('mimetype'))
+            vals['url'] = related_values['url']
+
+        return super(IrAttachment, self).write(vals)
+
     @api.model_create_multi
     def create(self, vals_list):
         for values in vals_list:
-            if values.get('type') != 'url':
+            if values.get('type') != 'url' and values.get('res_model') in ['mail.compose.message', 'sale.order']:
                 # convert Binary to Url
                 values = self._check_contents(values)
                 raw, datas = values.pop('raw', None), values.pop('datas', None)
@@ -29,7 +40,7 @@ class IrAttachment(models.Model):
                 bucket = self.get_s3_bucket()
                 filename = values.get("name")
                 mimetype = self._compute_mimetype(values)
-                related_values = self._get_datas_related_values_with_bucket(bucket, raw or base64.b64decode(datas or b''), filename, mimetype)
+                related_values = self._get_datas_related_values_with_bucket(bucket, raw or base64.b64decode(datas or b''), mimetype)
                 values['type'] = 'url'
                 values['datas'] = False
                 values['url'] = related_values['url']
@@ -37,13 +48,13 @@ class IrAttachment(models.Model):
         return super(IrAttachment, self).create(vals_list)
 
     def _get_datas_related_values_with_bucket(
-            self, bucket, bin_data, filename, mimetype, checksum=None
+            self, bucket, bin_data, mimetype, checksum=None
     ):
         bin_data = bin_data if bin_data else b""
         if not checksum:
             checksum = self._compute_checksum(bin_data)
         fname, url = self._file_write_with_bucket(
-            bucket, bin_data, filename, mimetype, checksum
+            bucket, bin_data, mimetype, checksum
         )
         return {
             "file_size": len(bin_data),
@@ -60,13 +71,13 @@ class IrAttachment(models.Model):
         bucket = self.env["res.config.settings"].get_s3_bucket()
         return bucket
 
-    def _file_write_with_bucket(self, bucket, bin_data, filename, mimetype, checksum):
+    def _file_write_with_bucket(self, bucket, bin_data, mimetype, checksum):
         # make sure, that given bucket is s3 bucket
         if not is_s3_bucket(bucket):
             return super(IrAttachment, self)._file_write_with_bucket(
-                bucket, bin_data, filename, mimetype, checksum
+                bucket, bin_data, mimetype, checksum
             )
-        filename = checksum + pathlib.Path(filename).suffix
+        filename = checksum + mimetypes.guess_extension(mimetype, True) or ""
         file_id = "odoo-test/{}".format(filename)
 
         bucket.put_object(
