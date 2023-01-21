@@ -82,16 +82,15 @@ class IrAttachment(models.Model):
                 bucket, bin_data, mimetype, checksum
             )
         filename = checksum + mimetypes.guess_extension(mimetype, True) or ""
-        file_id = "odoo-test/{}".format(filename)
 
         bucket.put_object(
-            Key=file_id,
+            Key=filename,
             Body=bin_data,
             ACL="public-read",
             ContentType=mimetype,
             ContentDisposition='attachment; filename="%s"' % filename,
         )
 
-        _logger.info("evt=IR_ATTACH upload_path={}".format(file_id))
-        obj_url = self.env["res.config.settings"].get_s3_obj_url(bucket, file_id)
+        _logger.info("evt=IR_ATTACH upload_path={}".format(filename))
+        obj_url = self.env["res.config.settings"].get_s3_obj_url(bucket, filename)
         return obj_url
